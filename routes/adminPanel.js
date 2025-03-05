@@ -19,6 +19,18 @@ router.get("/dashboard/users/:id",(req,res)=>{
   res.json(user);
 })
 
+router.get("/delete/:id",(req,res)=>{
+       let i=0;
+       let userIndex=users.findIndex((user)=>user.id==req.params.id);
+        if(userIndex==-1){
+          return res.status(404).send("No user with this ID");
+        }
+
+          users.splice(userIndex,1);
+          res.json(users);
+       
+})
+
 
 router.get("/dashboard/Allbooks",(req,res)=>{
   //  res.render("adminBooks",{books});
