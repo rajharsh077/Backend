@@ -1,10 +1,10 @@
 const express=require('express');
 const router=express.Router();
-const books=require("./data");
+const bookModel=require('../models/Books');
 
-router.get("/",(req,res)=>{
-    res.render("Books",{books});
-    // res.json(books);
+router.get("/",async(req,res)=>{
+    let books=await bookModel.find({});
+    res.json(books);
 })
 
 router.get("/:id",(req,res)=>{

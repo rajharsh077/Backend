@@ -1,22 +1,28 @@
 const express=require('express');
 const router=express.Router();
-const users=require("./UserData");
+
+
+const bookModel=require("../models/Books");
+const userModel=require("../models/Users");
 
 let authors = [{ email: "admin1@gmail.com", password: "12345" }];
 
-const books=require("./data");
 
 router.get("/",(req,res)=>{
   res.render("adminLogin");
 })
 
-router.get("/dashboard/users",(req,res)=>{
+router.get("/dashboard/users",async(req,res)=>{
+  let users=await userModel.find();
   res.json(users);
 })
 
-router.get("/dashboard/users/:id",(req,res)=>{
-  const user=users.find((u)=>u.id==req.params.id);
-  res.json(user);
+router.get("/dashboard/users/:id",async(req,res)=>{
+  const user=await userModel.findOne({id:req.params.id});
+  if(!user){
+    res.send("No user with this id");
+  }
+  res.status(200).json(user); 
 })
 
 router.get("/delete/:id",(req,res)=>{
@@ -32,41 +38,62 @@ router.get("/delete/:id",(req,res)=>{
 })
 
 
-router.get("/dashboard/Allbooks",(req,res)=>{
+router.get("/dashboard/Allbooks",async(req,res)=>{
   //  res.render("adminBooks",{books});
+  let books=await bookModel.find();
   res.json(books);
 })
 
-router.post("/dashboard",(req,res)=>{
-  const {email,password}=req.body;
+router.post("/dashboard", (req, res) => {
+  const { email, password } = req.body;
 
-  const author=authors.find((u)=>u.email==email && u.password==password);
+  const author = authors.find((u) => u.email === email && u.password === password);
 
-  if(!author){
-    return res.send("<h3 style='color:red;'>Invalid email or password. <a href='/admin'>Try Again</a></h3>");
+  if (!author) {
+    // Return JSON error instead of HTML
+    return res.status(401).json({ message: "Invalid email or password" });
   }
-  res.render("adminDashboard");
-})
 
- router.post("/submitBook",(req,res)=>{
-    const {id,title,image,author}=req.body;
+  // Successful login
+  res.status(200).json({ message: "Login successful" });
+});
 
-    if (!title || !author || !id) {
-        return res.send("<h3 style='color:red;'>Title and Author are required! <a href='/author'>Go Back</a></h3>");
-    }
 
-    const existingBook = books.find((b) => b.id === id);
-    if (existingBook) {
-        return res.send("<h3 style='color:red;'>Book ID already exists! <a href='/admin/dashboard'>Go Back</a></h3>");
-    }
+router.post("/submitBook", async (req, res) => {
+  const { id, title, image, author } = req.body;
 
-    books.push({ id,title,image,author });
-    console.log(books);
+  // Check if title, author, or id are missing
+  if (!title || !author || !id) {
+      return res.status(400).send({
+          message: "Title, Author, and ID are required!",
+          status: "error"
+      });
+  }
 
-  //  res.render("adminDashboard",{books});
-  res.json(books);
-    // res.send(`<h3 style='color:green;'>Book added successfully! <a href='/books'>Show Books</a>  <a href="/admin/dashboard"></a></h3> `);
-})
+  // Check if the book with the same title already exists
+  const existingBook = await bookModel.findOne({ title });
+  if (existingBook) {
+      return res.status(400).send({
+          message: "Book with this title already exists!",
+          status: "error"
+      });
+  }
+
+  // Create the new book
+  let newBook = await bookModel.create({
+      id, title, image, author
+  });
+
+  // Fetch the updated list of books
+  const books = await bookModel.find();
+
+  // Send the success response
+  res.status(200).send({
+      message: "Book added successfully!",
+      status: "success",
+      books: books
+  });
+});
 
  
 
