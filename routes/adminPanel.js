@@ -14,6 +14,7 @@ router.get("/",(req,res)=>{
 
 router.get("/dashboard/users",async(req,res)=>{
   let users=await userModel.find();
+  // console.log(users);
   res.json(users);
 })
 
@@ -25,17 +26,25 @@ router.get("/dashboard/users/:id",async(req,res)=>{
   res.status(200).json(user); 
 })
 
-router.get("/delete/:id",(req,res)=>{
-       let i=0;
-       let userIndex=users.findIndex((user)=>user.id==req.params.id);
-        if(userIndex==-1){
-          return res.status(404).send("No user with this ID");
-        }
+router.delete("/delete/:id", async (req, res) => {
+  try {
+    // Use the user model to delete a user from the database
+    const user = await userModel.findOneAndDelete({id:req.params.id});
 
-          users.splice(userIndex,1);
-          res.json(users);
-       
-})
+    if (!user) {
+      console.log(`No user with ID: ${req.params.id}`);
+      return res.status(404).json({ message: "No user with this ID" }); // Return 404 if user is not found
+    }
+
+    console.log(`User with ID ${req.params.id} deleted successfully.`);
+    res.json({ message: "User deleted successfully" }); // Return a success message
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    res.status(500).json({ message: "An error occurred while deleting the user." }); // Return a 500 error if something goes wrong
+  }
+});
+
+
 
 
 router.get("/dashboard/Allbooks",async(req,res)=>{
@@ -43,6 +52,26 @@ router.get("/dashboard/Allbooks",async(req,res)=>{
   let books=await bookModel.find();
   res.json(books);
 })
+
+router.delete("/delete/book/:id", async (req, res) => {
+  try {
+    // Find and delete the book by its id (which is the custom 'id' field)
+    const book = await bookModel.findOneAndDelete({ id: req.params.id });
+
+    if (!book) {
+      console.log(`No book with ID: ${req.params.id}`);
+      return res.status(404).json({ message: "No book with this ID" }); // Return 404 if no book is found
+    }
+
+    console.log(`Book with ID ${req.params.id} deleted successfully.`);
+    res.json({ message: "Book deleted successfully" }); // Return a success message
+  } catch (error) {
+    console.error("Error deleting book:", error);
+    res.status(500).json({ message: "An error occurred while deleting the book." }); // Return a 500 error if something goes wrong
+  }
+});
+
+
 
 router.post("/dashboard", (req, res) => {
   const { email, password } = req.body;

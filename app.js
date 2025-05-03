@@ -6,6 +6,7 @@ const cors=require('cors');
 app.use(cors());
 
 const userModel=require('./models/Users');
+const bookModel=require('./models/Books');
 
 const connectDB = require('./config/db');
 
@@ -34,6 +35,73 @@ app.get('/',(req,res)=>{
 app.get('/signup',(req,res)=>{
     res.render("signup");
 })
+
+
+app.post("/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: "All fields are required" });
+  }
+
+  const user = await userModel.findOne({ email });
+
+  if (!user) {
+    return res.status(401).json({ message: "Invalid credentials" });
+  }
+
+  
+   if (user.password !== password) return res.status(401).json({ message: "Wrong password" });
+
+  res.status(200).json({ message: "Login success", name: user.name });
+});
+
+
+app.post("/lend/:name", async (req, res) => {
+  const { bookId } = req.body;
+  const { name } = req.params;
+
+  try {
+    const user = await userModel.findOne({ name: name });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const book = await bookModel.findOne({ id: bookId });
+    if (!book) return res.status(404).json({ message: "Book not found" });
+
+    const alreadyLent = user.books.find(b => b.id === book.id);
+    if (alreadyLent) {
+      return res.status(400).json({ message: "You have already lent this book." });
+    }
+
+    user.books.push(book);
+    await user.save();
+
+    res.status(200).json({ message: "Book successfully lent!" });
+  } catch (err) {
+    console.error("Error in /lend route:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+
+app.get("/lent/:name", async (req, res) => {
+  const { name } = req.params;
+
+  try {
+    const user = await userModel.findOne({ name: name });
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.status(200).json(user.books); // Send the lent books
+  } catch (err) {
+    console.error("Error fetching lent books:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+
+
+
 
 app.post("/signup", async (req, res) => {
     try {
