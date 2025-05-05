@@ -80,7 +80,7 @@ app.post("/lend/:name", async (req, res) => {
       title: book.title,
       author: book.author,
       image: book.image,
-      lentDate: new Date()
+      lentDate: new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }))
     });
 
     await user.save();
@@ -123,9 +123,15 @@ app.get("/lent/:name", async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const today = new Date();
+    // Convert today's date to the same time zone as lentDate
+    const currentDateInUserTimezone = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+    );
 
     const booksWithFines = user.books.map((book) => {
-      const daysLent = Math.floor((today - new Date(book.lentDate)) / (1000 * 60 * 60 * 24));
+      const lentDate = new Date(book.lentDate);
+      const diffInTime = currentDateInUserTimezone - lentDate;
+      const daysLent = Math.floor(diffInTime / (1000 * 60 * 60 * 24));
       const fine = daysLent > 30 ? (daysLent - 30) * 2 : 0; // ₹2 per day after 30 days
 
       return {
@@ -141,6 +147,7 @@ app.get("/lent/:name", async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message });
   }
 });
+
 
 
 
@@ -246,22 +253,28 @@ app.delete('/wishlist/:name/remove', async (req, res) => {
 });
 
 
-// PATCH /pay-fine/:username
-app.patch('/pay-fine/:username', (req, res) => {
+app.patch('/pay-fine/:username', async (req, res) => {
   const { username } = req.params;
   const { bookId } = req.body;
 
-  const user = users.find(u => u.name === username);
-  if (!user) return res.status(404).json({ success: false, message: "User not found" });
+  try {
+    const user = await userModel.findOne({ name: username });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-  const book = user.books.find(b => b.id === bookId);
-  if (!book) return res.status(404).json({ success: false, message: "Book not found" });
+    const book = user.books.find(b => b.id === bookId);
+    if (!book) return res.status(404).json({ success: false, message: "Book not found" });
 
-  book.fine = 0;
-  book.finePaid = true;
+    book.finePaid = true; // You don’t need book.fine = 0 — you calculate it dynamically
 
-  res.json({ success: true, bookTitle: book.title });
+    await user.save();
+
+    res.json({ success: true, bookTitle: book.title });
+  } catch (err) {
+    console.error("Error in /pay-fine:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
 });
+
 
   
 
