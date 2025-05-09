@@ -5,6 +5,8 @@ const cors=require('cors');
 
 app.use(cors());
 
+const bcrypt=require('bcrypt');
+
 const userModel=require('./models/Users');
 const bookModel=require('./models/Books');
 
@@ -13,6 +15,8 @@ const connectDB = require('./config/db');
 const booksRouter = require("./routes/books");
 const userRouter=require("./routes/users");
 const adminRouter=require("./routes/adminPanel");
+
+const { authenticateJWT,generateToken } = require("./middlewares/authMiddleware");
 
 
 connectDB();
@@ -50,31 +54,44 @@ app.post("/login", async (req, res) => {
     return res.status(401).json({ message: "Invalid credentials" });
   }
 
-  
-   if (user.password !== password) return res.status(401).json({ message: "Wrong password" });
+  bcrypt.compare(password, user.password, (err, result) => {
+    if (err) {
+      console.error("Error comparing passwords:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
 
-  res.status(200).json({ message: "Login success", name: user.name });
+    if (!result) {
+      return res.status(401).json({ message: "Wrong password" });
+    }
+    const payload={
+      email:email,
+      name:user.name
+    }
+    const token=generateToken(payload);
+    res.status(200).json({ message: "Login success", name: user.name,token:token });
+  });
 });
 
 
-app.post("/lend/:name", async (req, res) => {
-  const { bookId } = req.body;
-  const { name } = req.params;
+app.post("/lend", authenticateJWT, async (req, res) => {
+  const { bookId } = req.body;  // Get the bookId from the request body
 
   try {
-    const user = await userModel.findOne({ name });
+    // Find the user using the email from the JWT payload
+    const user = await userModel.findOne({ email: req.user.email });
     if (!user) return res.status(404).json({ message: "User not found" });
 
+    // Find the book by its ID
     const book = await bookModel.findOne({ id: bookId });
     if (!book) return res.status(404).json({ message: "Book not found" });
 
-    // Check if already lent
+    // Check if the book is already lent to the user
     const alreadyLent = user.books.find(b => b.id === book.id);
     if (alreadyLent) {
       return res.status(400).json({ message: "You have already lent this book." });
     }
 
-    // Push full book data with lentDate
+    // Add the book with the lent date
     user.books.push({
       id: book.id,
       title: book.title,
@@ -83,6 +100,7 @@ app.post("/lend/:name", async (req, res) => {
       lentDate: new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }))
     });
 
+    // Save the user with the updated book information
     await user.save();
 
     res.status(200).json({ message: "Book successfully lent!" });
@@ -94,12 +112,13 @@ app.post("/lend/:name", async (req, res) => {
 
 
 
-app.delete('/return/:name', async (req, res) => {
-  const userName = req.params.name;
+
+app.delete('/return',authenticateJWT, async (req, res) => {
+  const userEmail = req.user.email;
   const { bookId } = req.body;
 
   try {
-    const user = await userModel.findOne({ name: userName });
+    const user = await userModel.findOne({ email: email });
 
     if (!user) return res.status(404).json({ message: 'User not found' });
 
@@ -114,28 +133,38 @@ app.delete('/return/:name', async (req, res) => {
   }
 });
 
-app.get("/lent/:name", async (req, res) => {
-  const { name } = req.params;
-
+app.get("/lent", authenticateJWT, async (req, res) => {
+  const { email } = req.user;  // Get the email from the JWT payload
+  
   try {
-    const user = await userModel.findOne({ name });
+    // Find the user by their email (from the JWT token)
+    const user = await userModel.findOne({ email });
 
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-    const today = new Date();
-    // Convert today's date to the same time zone as lentDate
-    const currentDateInUserTimezone = new Date(
-      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
-    );
+    const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
 
+    // Map over the user's books to calculate fines
     const booksWithFines = user.books.map((book) => {
-      const lentDate = new Date(book.lentDate);
-      const diffInTime = currentDateInUserTimezone - lentDate;
-      const daysLent = Math.floor(diffInTime / (1000 * 60 * 60 * 24));
-      const fine = daysLent > 30 ? (daysLent - 30) * 2 : 0; // ₹2 per day after 30 days
+      const lentDate = book.lentDate ? new Date(book.lentDate) : null;
+
+      let daysLent = 0;
+      let fine = 0;
+
+      if (lentDate) {
+        // Normalize dates to remove time part
+        const lentOnly = new Date(lentDate.getFullYear(), lentDate.getMonth(), lentDate.getDate());
+        const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+        const diffInTime = todayOnly - lentOnly;
+        daysLent = Math.floor(diffInTime / (1000 * 60 * 60 * 24)); // Calculate days lent
+        fine = daysLent > 30 ? (daysLent - 30) * 2 : 0; // Fine calculation
+      }
 
       return {
-        ...book.toObject?.() || book, // Ensure plain object if it's a Mongoose doc
+        ...(book.toObject?.() || book),
         daysLent,
         fine,
       };
@@ -147,6 +176,7 @@ app.get("/lent/:name", async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message });
   }
 });
+
 
 
 
@@ -170,18 +200,43 @@ app.post("/signup", async (req, res) => {
     // Auto-increment ID
     const userCount = await userModel.countDocuments();
 
-    // Create new user
-    const newUser = await userModel.create({
-      id: userCount + 1,
-      name,
-      email,
-      password,
-      phone,
-      books: [],
-      wishlist:[],
-    });
+    // Hash the password using callbacks
+    bcrypt.genSalt(10, function(err, salt) {
+      if (err) {
+        console.error("Salt generation error:", err);
+        return res.status(500).json({ message: "Error generating salt" });
+      }
 
-    res.status(201).json({ message: "User signed up successfully", user: newUser });
+      bcrypt.hash(password, salt, async function(err, hash) {
+        if (err) {
+          console.error("Hashing error:", err);
+          return res.status(500).json({ message: "Error hashing password" });
+        }
+
+        // Create new user inside the hash callback
+        try {
+          const newUser = await userModel.create({
+            id: userCount + 1,
+            name,
+            email,
+            password: hash, // use hashed password
+            phone,
+            books: [],
+            wishlist: [],
+          });
+          const payload={
+            email:email,
+          }
+
+          const token=generateToken(payload);
+
+          res.status(201).json({ message: "User signed up successfully", user: newUser,token:token });
+        } catch (createErr) {
+          console.error("User creation error:", createErr);
+          res.status(500).json({ message: "Error creating user" });
+        }
+      });
+    });
   } catch (error) {
     console.error("Signup Error:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -189,55 +244,57 @@ app.post("/signup", async (req, res) => {
 });
 
 
-app.post('/:name/wishlist', async (req, res) => {
-  const { name } = req.params;
+
+
+app.post('/wishlist', authenticateJWT, async (req, res) => {
   const { book } = req.body;
 
   try {
-    const user = await userModel.findOne({ name });
+    const user = await userModel.findOne({ email: req.user.email }); // Use email from JWT
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Add the book to the user's wishlist if it's not already there
     if (!user.wishlist.some((b) => b.id === book.id)) {
       user.wishlist.push(book);
-      await user.save(); // Save the updated wishlist to the database
-      res.status(200).json({ message: "Book added to wishlist" });
+      await user.save();
+      res.status(200).json({ message: `Book "${book.title}" added to wishlist` });
     } else {
-      res.status(400).json({ message: "Book is already in your wishlist" });
+      res.status(400).json({ message: `Book "${book.title}" is already in your wishlist` });
     }
   } catch (err) {
-    res.status(500).json({ message: "Error adding book to wishlist" });
+    console.error("Error adding book to wishlist:", err);
+    res.status(500).json({ message: "Error adding book to wishlist", error: err.message });
   }
 });
 
-app.get('/:name/wishlist', async (req, res) => {
-  const { name } = req.params;
 
+app.get('/wishlist', authenticateJWT, async (req, res) => {
   try {
-    const user = await userModel.findOne({ name });
+    const user = await userModel.findOne({ email: req.user.email }); // Secure lookup via JWT
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
     res.status(200).json({ wishlist: user.wishlist || [] });
   } catch (err) {
+    console.error("Error fetching wishlist:", err);
     res.status(500).json({ message: "Failed to fetch wishlist" });
   }
 });
 
 
-app.delete('/wishlist/:name/remove', async (req, res) => {
-  const { name } = req.params;
+
+// Backend - more secure and cleaner
+app.delete('/wishlist/remove', authenticateJWT, async (req, res) => {
   const { bookId } = req.body;
 
   try {
-    const user = await userModel.findOne({ name });
+    const user = await userModel.findOne({ email: req.user.email }); // from JWT
+
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Filter out the book from wishlist
     const initialLength = user.wishlist.length;
     user.wishlist = user.wishlist.filter(book => book.id !== bookId);
 
@@ -248,23 +305,23 @@ app.delete('/wishlist/:name/remove', async (req, res) => {
     await user.save();
     res.status(200).json({ message: "Book removed from wishlist" });
   } catch (err) {
+    console.error("Error removing from wishlist:", err);
     res.status(500).json({ message: "Error removing from wishlist" });
   }
 });
 
 
-app.patch('/pay-fine/:username', async (req, res) => {
-  const { username } = req.params;
+app.patch('/pay-fine', authenticateJWT, async (req, res) => {
   const { bookId } = req.body;
 
   try {
-    const user = await userModel.findOne({ name: username });
+    const user = await userModel.findOne({ email: req.user.email });
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
     const book = user.books.find(b => b.id === bookId);
     if (!book) return res.status(404).json({ success: false, message: "Book not found" });
 
-    book.finePaid = true; // You don’t need book.fine = 0 — you calculate it dynamically
+    book.finePaid = true;
 
     await user.save();
 
@@ -274,6 +331,7 @@ app.patch('/pay-fine/:username', async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message });
   }
 });
+
 
 
   
