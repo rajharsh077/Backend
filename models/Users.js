@@ -3,7 +3,11 @@ const mongoose = require('mongoose');
 const userSchema = new mongoose.Schema({
   id: Number,
   name: String,
-  email: String,
+  email: {
+  type: String,
+  required: true,
+  unique: true,
+},
   password: String,
   phone: Number,
 
@@ -32,6 +36,6 @@ const userSchema = new mongoose.Schema({
       image: String,
     }
   ]
-});
+},{ timestamps: true });
 
 module.exports = mongoose.model("users", userSchema);

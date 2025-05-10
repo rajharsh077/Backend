@@ -65,7 +65,8 @@ app.post("/login", async (req, res) => {
     }
     const payload={
       email:email,
-      name:user.name
+      name:user.name,
+      role:user.role
     }
     const token=generateToken(payload);
     res.status(200).json({ message: "Login success", name: user.name,token:token });
@@ -226,6 +227,7 @@ app.post("/signup", async (req, res) => {
           });
           const payload={
             email:email,
+            name:name,
           }
 
           const token=generateToken(payload);
@@ -322,7 +324,7 @@ app.patch('/pay-fine', authenticateJWT, async (req, res) => {
     if (!book) return res.status(404).json({ success: false, message: "Book not found" });
 
     book.finePaid = true;
-
+    user.books = user.books.filter(b => b.id !== bookId);
     await user.save();
 
     res.json({ success: true, bookTitle: book.title });

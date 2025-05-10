@@ -2,23 +2,24 @@ const express=require('express');
 const router=express.Router();
 
 
+const {generateAdminToken,verifyAdmin} = require("../middlewares/authMiddleware");
 const bookModel=require("../models/Books");
 const userModel=require("../models/Users");
 
-let authors = [{ email: "admin1@gmail.com", password: "12345" }];
+let authors = [{ email: "admin1@gmail.com", password: "12345",role:"admin" }];
 
 
 router.get("/",(req,res)=>{
   res.render("adminLogin");
 })
 
-router.get("/dashboard/users",async(req,res)=>{
+router.get("/dashboard/users",verifyAdmin,async(req,res)=>{
   let users=await userModel.find();
   // console.log(users);
   res.json(users);
 })
 
-router.get("/dashboard/users/:id",async(req,res)=>{
+router.get("/dashboard/users/:id",verifyAdmin,async(req,res)=>{
   const user=await userModel.findOne({id:req.params.id});
   if(!user){
     res.send("No user with this id");
@@ -26,7 +27,7 @@ router.get("/dashboard/users/:id",async(req,res)=>{
   res.status(200).json(user); 
 })
 
-router.delete("/delete/:id", async (req, res) => {
+router.delete("/delete/:id",verifyAdmin, async (req, res) => {
   try {
     // Use the user model to delete a user from the database
     const user = await userModel.findOneAndDelete({id:req.params.id});
@@ -47,13 +48,13 @@ router.delete("/delete/:id", async (req, res) => {
 
 
 
-router.get("/dashboard/Allbooks",async(req,res)=>{
+router.get("/dashboard/Allbooks",verifyAdmin,async(req,res)=>{
   //  res.render("adminBooks",{books});
   let books=await bookModel.find();
   res.json(books);
 })
 
-router.delete("/delete/book/:id", async (req, res) => {
+router.delete("/delete/book/:id",verifyAdmin, async (req, res) => {
   try {
     // Find and delete the book by its id (which is the custom 'id' field)
     const book = await bookModel.findOneAndDelete({ id: req.params.id });
@@ -82,13 +83,17 @@ router.post("/dashboard", (req, res) => {
     // Return JSON error instead of HTML
     return res.status(401).json({ message: "Invalid email or password" });
   }
-
+  const payload={
+    email:author.email,
+    role:author.role,
+  }
+  const token=generateAdminToken(payload);
   // Successful login
-  res.status(200).json({ message: "Login successful" });
+  res.status(200).json({ message: "Login successful",token:token });
 });
 
 
-router.post("/submitBook", async (req, res) => {
+router.post("/submitBook",verifyAdmin, async (req, res) => {
   const { id, title, image, author } = req.body;
 
   // Check if title, author, or id are missing
